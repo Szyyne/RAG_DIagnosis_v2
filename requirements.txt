@@ -1,0 +1,6 @@
+notebook
+ipykernel
+transformers
+torch
+numpy
+uvicorn

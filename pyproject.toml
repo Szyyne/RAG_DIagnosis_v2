@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name            = "rag-diagnostic-gym"
+version         = "0.1.0"
+description     = "OpenEnv v0.2.2 RL environment for RAG pipeline fault diagnosis"
+readme          = "README.md"
+license         = { text = "MIT" }
+requires-python = ">=3.10"
+
+dependencies = [
+    "openenv-core>=0.2.2",
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.29.0",
+    "websockets>=12.0",
+    "pydantic>=2.6.0",
+    "pyyaml>=6.0.1",
+]
+
+[project.optional-dependencies]
+training = [
+    "torch>=2.2.0",
+    "transformers>=4.40.0",
+    "trl>=0.8.6",
+    "peft>=0.10.0",
+    "bitsandbytes>=0.43.0",
+    "accelerate>=0.29.0",
+    "datasets>=2.19.0",
+    "unsloth[colab-new]",
+    "wandb>=0.16.0",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+    "matplotlib>=3.8",
+    "numpy>=1.26",
+]
+
+[project.scripts]
+rag-gym-server = "rag_diagnostic_gym.server.environment:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["rag_diagnostic_gym*", "agents*", "training*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths    = ["tests"]

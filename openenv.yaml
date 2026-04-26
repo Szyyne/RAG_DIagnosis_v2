@@ -1,0 +1,126 @@
+name: rag-diagnostic-gym
+version: "0.2.0"
+description: >
+  RL training environment for RAG pipeline fault diagnosis.
+  A two-agent system diagnoses root causes and emits config patches
+  for broken retrieval pipelines. All rewards are normalized to [0, 1].
+
+openenv_version: "0.2.2"
+
+environment:
+  class: rag_diagnostic_gym.server.environment:RAGDiagnosticEnvironment
+  type: step        # gym-style: reset / step / state
+  episode_steps: 2  # step-0: DiagnoseAction, step-1: PatchAction
+  reward_range: [0.0, 1.0]    # ALL rewards are normalized to [0, 1]
+
+  observation_space:
+    type: dict
+    fields:
+      task_id:    { type: string }
+      difficulty: { type: string, enum: [easy, medium, hard] }
+      step:       { type: integer, min: 0, max: 2 }
+      symptoms:   { type: dict }
+      diagnosis:  { type: dict, nullable: true }
+      reward:     { type: float, min: 0.0, max: 1.0 }
+      terminated: { type: boolean }
+      info:       { type: dict }
+
+  action_space:
+    type: union
+    variants:
+      - name: DiagnoseAction
+        fields:
+          action_type: { type: string, const: diagnose }
+          root_cause:  { type: string }
+          explanation: { type: string }
+          confidence:  { type: float, min: 0.0, max: 1.0 }
+      - name: PatchAction
+        fields:
+          action_type: { type: string, const: patch }
+          patch:       { type: dict }
+          rationale:   { type: string }
+
+server:
+  framework: fastapi
+  entrypoint: rag_diagnostic_gym.server.environment:app
+  host: "0.0.0.0"
+  port: 7860                        # HF Spaces default
+  transport: websocket
+  websocket_path: /ws
+  health_path: /health
+  extra_paths:
+    - /tasks
+    - /rubrics
+    - /state
+
+tasks:
+  - id: chunking_error_001
+    difficulty: easy
+    reward_multiplier: 1.0
+    root_cause: chunk_size_too_large
+  - id: embedding_mismatch_001
+    difficulty: medium
+    reward_multiplier: 1.3
+    root_cause: embedding_model_mismatch
+  - id: hallucination_retrieval_001
+    difficulty: hard
+    reward_multiplier: 1.6
+    root_cause: query_expansion_semantic_drift_no_reranker
+
+reward:
+  range: [0.0, 1.0]      # hard guarantee — all scalars ∈ [0, 1]
+  normalization: "weighted_sum × difficulty_multiplier / max_multiplier(1.6)"
+  components:
+    diagnosis:
+      weight: 0.35
+      range: [0.0, 1.0]
+      description: >
+        Root-cause exact match (1.0) or partial-keyword match (0.5),
+        plus explanation keyword-overlap bonus (up to +0.15),
+        plus confidence calibration bonus/penalty (±0.10–0.15).
+    patch:
+      weight: 0.45
+      range: [0.0, 1.0]
+      description: >
+        F1 over config key-value pairs vs ground truth,
+        minus 0.08 per distractor key included,
+        plus +0.05 exact-match bonus.
+    faithfulness:
+      weight: 0.20
+      range: [0.0, 1.0]
+      description: >
+        Simulated post-patch faithfulness: interpolated from baseline to
+        target faithfulness score proportional to patch recall.
+  curriculum: difficulty_multiplier   # easy×1.0 / medium×1.3 / hard×1.6
+
+rubrics:
+  composable: true
+  classes:
+    - rag_diagnostic_gym.reward:DiagnosisRubric
+    - rag_diagnostic_gym.reward:PatchRubric
+    - rag_diagnostic_gym.reward:FaithfulnessRubric
+  apply_fn: rag_diagnostic_gym.reward:apply_rubrics
+
+training:
+  framework: trl
+  algorithm: grpo
+  base_model: unsloth/Qwen2.5-7B-Instruct-bnb-4bit
+  lora_rank: 16
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  learning_rate: 2e-5
+  epochs: 3
+  num_generations: 8
+  notebook: notebooks/train_colab.ipynb
+  reward_range: [0.0, 1.0]
+
+tags:
+  - rag
+  - retrieval-augmented-generation
+  - sre
+  - fault-diagnosis
+  - multi-agent
+  - grpo
+  - llm-training
+  - openenv
+  - normalized-reward
